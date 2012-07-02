@@ -1,41 +1,41 @@
-//------------------------------------------------------------------------------
-/// \file MemoryPool.cpp
-// created on Wed July 21 2010
-//------------------------------------------------------------------------------
+//==============================================================================
+/// \file MemoryPoolF.cpp
+// created on July 1 2012 by editing MemoryPool.cpp
+//==============================================================================
 
-#include "MemoryPool.h"
+#include "MemoryPoolF.h"
 #include <cstdlib>
 #include <iostream>
 
-/** \class MemoryPool
+/** \class MemoryPoolF
  *
- * MemoryPool contains a linked list of large blocks of memory. Each block
+ * MemoryPoolF contains a linked list of large blocks of memory. Each block
  * has a MemoryBlock object at its beginning that contains the size of the block
- * and a pointer to the next block. Each time the user calls MemoryPool::alloc,
- * the MemoryPool returns a pointer to at least the requested number of bytes of
+ * and a pointer to the next block. Each time the user calls MemoryPoolF::alloc,
+ * the MemoryPoolF returns a pointer to at least the requested number of bytes of
  * free memory. It gets these smaller chunks of memory from the first block
  * in its list of large blocks. When this block runs out of room, it allocates
  * a new large block and adds it to the top of the list. (All blocks but the
  * first are full.)
  *
- * MemoryPool also has a list of reserve blocks. These can be given to the
- * MemoryPool with the MemoryPool::donate method. New blocks will not be
+ * MemoryPoolF also has a list of reserve blocks. These can be given to the
+ * MemoryPoolF with the MemoryPoolF::donate method. New blocks will not be
  * allocated until all the reserve blocks are filled.
  *
- * To delete the items in the pool, one can use MemoryPool::clear, which
- * turns all active memory into reserve memory, or MemoryPool::releaseAll,
+ * To delete the items in the pool, one can use MemoryPoolF::clear, which
+ * turns all active memory into reserve memory, or MemoryPoolF::releaseAll,
  * which returns all the active and reserve memory it has to the operating system.
  * (Items must be deleted all at once; there is no free list.)
  *
- * MemoryPool will also ensure that the objects it allocates adhere to a
+ * MemoryPoolF will also ensure that the objects it allocates adhere to a
  * specific alignment. It does this by placing appropriate padding around all
  * the items.
  *
- * Technical Note: MemoryPool's definition of being aligned is that there
+ * Technical Note: MemoryPoolF's definition of being aligned is that there
  * is an integer multiple of alignment bytes between the pointer given to the
- * pool by malloc and every pointer given to the user by MemoryPool::alloc.
- * This means that the actual alignment of MemoryPool cannot be greater than
- * that of malloc. (That is, you can tell MemoryPool to align to 16 bytes,
+ * pool by malloc and every pointer given to the user by MemoryPoolF::alloc.
+ * This means that the actual alignment of MemoryPoolF cannot be greater than
+ * that of malloc. (That is, you can tell MemoryPoolF to align to 16 bytes,
  * and it will space your items accordingly, but if malloc hands it memory aligned
  * to 8 bytes then half the time your items will actually be aligned to odd
  * multiples of 8.) Malloc is required to hand back memory aligned to fit
@@ -50,15 +50,26 @@
 //==============================================================================
 
 //------------------------------------------------------------------------------
+MemoryPoolF::MemoryPoolF ()
+: _activeBlock(nullptr), _reserveBlock(nullptr), _activeMemory(0), _itemSize(0), _pos(0), _end(0),
+_maxAlignment(0), _newBlockSize(0), _minimumDonationSize(0),
+_requestedPieces(0), _requestedBytes(0), _activeSize(0), _activeBlocks(0),
+_reserveSize(0), _reserveBlocks(0)
+{}
+
+bool setItemSize (unsigned itemSize);
+void setAlignment (unsigned alignment);
+void setNextBlockSize (unsigned nextBlockSize);
+//------------------------------------------------------------------------------
 // Constructor
 /**
- * InitialSize is the minimum number of bytes that the MemoryPool will be able to store
+ * InitialSize is the minimum number of bytes that the MemoryPoolF will be able to store
  * in the first MemoryBlock it creates. The only case in which the first MemoryBlock
  * created will have a larger capacity that initialSize is if the first allocation
  * is for more than initialSize bytes of memory.
  *
  * ToDo: ReWrite!
- * The MemoryPool guarantees that MemoryPool::alloc will return memory
+ * The MemoryPoolF guarantees that MemoryPoolF::alloc will return memory
  * that is aligned to multiples of alignment. The alignment must be a power of
  * two (including 2^0). (If you give a number that is not a power of two,
  * it will be rounded up for you.) If you don't specify an alignment (or set
@@ -67,10 +78,10 @@
  * 32, it will be set to 32 (even 32 is absurdly large).
  *
  * The minimumCapacity is used to determine which donated blocks are worth
- * keeping. If a donated block can not hold minimumCapacity items, it is thrown
+ * keeping. If a donated block cannot hold minimumCapacity items, it is thrown
  * away. MinimumCapacity must be at least 1.
  */
-MemoryPool::MemoryPool (unsigned initialSize, unsigned maxAlignment, unsigned minimumDonationSize)
+MemoryPoolF::MemoryPoolF (unsigned initialSize, unsigned maxAlignment, unsigned minimumDonationSize)
 : _activeBlock(0), _reserveBlock(0), _activeMemory(0), _pos(0), _end(0),
 _maxAlignment(maxAlignment), _newBlockSize(sizeof(MemoryBlock)+initialSize),
 _minimumDonationSize(minimumDonationSize),
@@ -90,6 +101,7 @@ _reserveSize(0), _reserveBlocks(0)
    // Alignment must be a power of two (between 1 and 32).
    if (!_maxAlignment) {
       _maxAlignment = 1;
+
    } else {
       if (_maxAlignment > 32)
          _maxAlignment = 32;
@@ -109,6 +121,15 @@ _reserveSize(0), _reserveBlocks(0)
 }
 
 //------------------------------------------------------------------------------
+bool MemoryPoolFF::setItemSize (unsigned itemSize) {
+   if (_requestedPieces == 0) {
+      _itemSize = itemSize;
+      return true;
+   }
+   return false;
+}
+
+//------------------------------------------------------------------------------
 // Returns a pointer to a piece of memory with the specified size and alignment.
 /**
  * This method does not ensure alignment is a power of two. (The assumption
@@ -117,7 +138,7 @@ _reserveSize(0), _reserveBlocks(0)
  *
  * If it is out of room and malloc fails, it returns a null pointer.
  */
-void* MemoryPool::alloc (unsigned size, unsigned alignment)
+void* MemoryPoolF::alloc (unsigned size, unsigned alignment)
 {
    // See if the object will fit in the active block.
    // Note that this test fails when _insertPoint == _endOfBlock == 0,
@@ -176,7 +197,7 @@ void* MemoryPool::alloc (unsigned size, unsigned alignment)
  * Does not add any alignment padding, because that would defeat the purpose
  * of being contiguous.
  */
-void* MemoryPool::allocContiguous (unsigned size)
+void* MemoryPoolF::allocContiguous (unsigned size)
 {
    if (_pos + size > _end)
       return 0;
@@ -190,10 +211,10 @@ void* MemoryPool::allocContiguous (unsigned size)
 //------------------------------------------------------------------------------
 // Empties the pool, but does not return the memory to the operating system.
 /**
- * The capacity of the MemoryPool thus stays the same. This method does
+ * The capacity of the MemoryPoolF thus stays the same. This method does
  * not zero the memory.
  */
-void MemoryPool::clear () {
+void MemoryPoolF::clear () {
    MemoryBlock* nextBlock;
    while (_activeBlock) {
       nextBlock = _activeBlock->_next;
@@ -213,7 +234,7 @@ void MemoryPool::clear () {
 
 //------------------------------------------------------------------------------
 // Returns all memory to the operating system.
-void MemoryPool::releaseAll () {
+void MemoryPoolF::releaseAll () {
    releaseReserve();
    
    MemoryBlock* nextBlock;
@@ -235,7 +256,7 @@ void MemoryPool::releaseAll () {
 
 //------------------------------------------------------------------------------
 // Returns all reserve memory to the operating system.
-void MemoryPool::releaseReserve () {
+void MemoryPoolF::releaseReserve () {
    MemoryBlock* nextBlock;
    while (_reserveBlock) {
       nextBlock = _reserveBlock->_next;
@@ -252,7 +273,7 @@ void MemoryPool::releaseReserve () {
 /**
  * The block starts at start, and is size bytes long.
  */
-void MemoryPool::donate (void* start, unsigned size) {
+void MemoryPoolF::donate (void* start, unsigned size) {
    // If the donated block is too small, it's not worth keeping it around.
    if (size < _minimumDonationSize) {
       free(start);
@@ -269,10 +290,10 @@ void MemoryPool::donate (void* start, unsigned size) {
 
 
 //------------------------------------------------------------------------------
-// Prints data reflecting what the MemoryPool is set up to store.
-void MemoryPool::printParameters () const
+// Prints data reflecting what the MemoryPoolF is set up to store.
+void MemoryPoolF::printParameters () const
 {
-   std::cout << "== MemoryPool Parameters ==\n";
+   std::cout << "== MemoryPoolF Parameters ==\n";
    std::cout << "MemoryBlock Size:    " << memoryBlockSize() << '\n';
    std::cout << "MemoryBlock Padding: " << memoryBlockPadding() << '\n';
    std::cout << "Header Size:         " << headerSize() << '\n';
@@ -281,10 +302,10 @@ void MemoryPool::printParameters () const
 }
 
 //------------------------------------------------------------------------------
-// Prints data reflecting the current state of the MemoryPool.
-void MemoryPool::printState () const
+// Prints data reflecting the current state of the MemoryPoolF.
+void MemoryPoolF::printState () const
 {
-   std::cout << "=== MemoryPool State ===\n";
+   std::cout << "=== MemoryPoolF State ===\n";
    std::cout << "Requested Pieces: " << requestedPieces() << '\n';
    std::cout << "Requested Bytes:  " << requestedBytes() << '\n';
    std::cout << "Active Bytes:     " << activeBytes() << '\n';
@@ -298,7 +319,7 @@ void MemoryPool::printState () const
 
 //------------------------------------------------------------------------------
 // Prints everything.
-void MemoryPool::print () const
+void MemoryPoolF::print () const
 {
    printParameters();
    printState();
