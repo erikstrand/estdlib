@@ -50,6 +50,16 @@
 //==============================================================================
 
 //------------------------------------------------------------------------------
+void MemoryBlockRecord::attach (void* ptr, unsigned blockSize, unsigned itemSize) {
+   start = ptr;
+   end   = start + blockSize;
+   freeItems = blockSize / itemSize;
+   occupied.resize(freeItems);
+   occupied.zero();
+   firstFree = 0;
+}
+
+//------------------------------------------------------------------------------
 MemoryPoolF::MemoryPoolF ()
 : _activeBlock(nullptr), _reserveBlock(nullptr), _activeMemory(0), _itemSize(0), _pos(0), _end(0),
 _maxAlignment(0), _newBlockSize(0), _minimumDonationSize(0),

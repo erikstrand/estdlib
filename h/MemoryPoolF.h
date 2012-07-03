@@ -11,7 +11,7 @@
 /// A memory pool that hands out fixed sized pieces.
 //==============================================================================
 
-class MemoryPoolF  {
+class MemoryPoolF {
 // SubClasses
 private:
    /// The fundamental unit of storage of MemoryPoolF.
@@ -22,60 +22,59 @@ private:
     * MemoryBlocks), and the size of the block of memory that it is
     * at the head of.
     */
-   struct MemoryBlock {
-      MemoryBlock* _next;      ///< the next MemoryBlock
-      unsigned _size;          ///< size in bytes of the MemoryBlock (including size of MemoryBlock itself)
-      unsigned _items;         ///< total number of items we can fit in this block (depends on what the items are)
-      // (_size - sizeof(MemoryBlock)) bytes of memory go here
+   struct MemoryBlockRecord {
+      char* start;
+      char* end;
+      BitField occupied;
+      unsigned freeItems;
+      unsigned firstFree;
+
+      MemoryBlockRecord (): start(nullptr), end(nullptr), occupied(), freeItems(0) {}
+      void attach (void* ptr, unsigned blockSize, unsigned itemSize);
+      bool operator>  (MemoryBlockRecord const& mbr) { return freeItems > mbr.freeItems; }
+      bool contains (void* ptr) { return (start <= static_cast<char*>(ptr) and static_cast<char*>(ptr) < end); }
    };
    
 // Members
 private:
-   MemoryBlock* _activeBlock;  ///< current block, then chain of filled blocks
-   MemoryBlock* _reserveBlock; ///< first block in chain of reserve (empty) blocks
-   char* _activeMemory;        ///< points to the beginning of the writable portion of the active MemoryBlock
-   unsigned _itemSize;         ///< size of chunks that MemoryPoolFF will hand out
-   unsigned _pos;              ///< _activeMemory[_pos] is the first free byte of mem
-   unsigned _end;              ///< _activeMemory[_end] is one past the last byte of the memory block
-
+   MemoryBlockRecord* _block; ///< array of MemoryBlockRecords
+   unsigned _blocks;          ///< number of MemoryBlockRecords currently being used
+   unsigned _maxBlocks;       ///< can fit _maxBlocks MemoryBlockRecords in _block
+   unsigned _itemSize;        ///< size of chunks that MemoryPoolFF will hand out
    unsigned _nextBlockSize;   ///< the number of items we intend to fit in the next block we allocate
    /// if a donated block's capacity is less than _minimumDonationSize, it is tossed
    unsigned _minimumDonationSize;
 
    // These members are for profiling and debugging purposes only.
-   unsigned _requestedPieces;  ///< number of times MemoryPoolF::alloc has been called
-   unsigned _activeSize;       ///< total size of all active blocks (including size of MemoryBlocks themselves)
-   unsigned _activeBlocks;     ///< number of blocks in active chain
-   unsigned _reserveSize;      ///< total size of all free blocks (including size of MemoryBlocks themselves)
-   unsigned _reserveBlocks;    ///< number of blocks in reserve chain
+   unsigned _requestedPieces; ///< number of times MemoryPoolF::alloc has been called
+   unsigned _activeSize;      ///< total size of all active blocks (including size of MemoryBlocks themselves)
+   unsigned _blocks;          ///< number of blocks in active chain
 
 // Methods
 public:
    /// Constructor
    MemoryPoolF ();
-   bool setItemSize (unsigned itemSize);
+   bool setItemSize (unsigned itemSize, unsigned alignment = itemSize);
    void setNextBlockSize (unsigned nextBlockSize);
    ~MemoryPoolF ();        ///< Destructor
 
-   /// Returns a pointer to a piece of memory with the specified size, with the default (max) alignment.
-   void* alloc (unsigned size);
-
-   void clear ();              ///< Empties the pool, but does not return the memory to the operating system.
-   void releaseAll ();         ///< Returns all memory to the operating system.
-   void releaseReserve ();     ///< Returns all reserve memory to the operating system.
    void donate (void* start, unsigned size); ///< Adds a memory block to the list of reserve blocks.
+   void* alloc ();            ///< returns _itemSize bytes of memory
+   void  free  ();
+
+   void clear ();             ///< Empties the pool, but does not return the memory to the operating system.
+   void releaseAll ();        ///< Returns all memory to the operating system.
 
    
    // All the remaining methods are purely for profiling and/or debugging purposes.
-   unsigned memoryBlockSize     () const { return sizeof(MemoryBlock);  }
+   unsigned blocks              () const { return _blocks;              }
+   unsigned itemSize            () const { return _itemSize;            }
    unsigned nextBlockSize       () const { return _nextBlockSize;       }
    unsigned mimimumDonationSize () const { return _minimumDonationSize; }
    unsigned requestedPieces     () const { return _requestedPieces;     }
    unsigned activeBytes         () const { return _activeBytes;         }
-   unsigned activeBlocks        () const { return _activeBlocks;        }
-   unsigned reserveBytes        () const { return _reserveBytes;        }
-   unsigned reserveBlocks       () const { return _reserveBlocks;       }
-   unsigned remainingBytesOfActiveBlock () const { return _end - _pos; }
+   unsigned memoryBlockSize     () const { return sizeof(MemoryBlock);  }
+   unsigned freeItems           () const { return _block[0].freeItems;  }
 
    /*
    void printParameters () const;   ///< Prints data reflecting what the MemoryPoolF is set up to store.
