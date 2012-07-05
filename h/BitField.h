@@ -47,11 +47,10 @@ public:
       unsigned _i;               // current index
    public:
       // creates a CItr initialized to the specified bit
-      CItr (BitField const& bitField, unsigned i): _bitField(bitField), _i(i) {}
-      // creates a CItr initialized to bit 0
-      CItr (BitField const& bitField): CItr(bitField, 0) {}
+      CItr (BitField const& bitField, unsigned i = 0): _bitField(bitField), _i(i) {}
       CItr& operator++ () { ++_i; return *this; }
       CItr& nextSet () { do { ++(*this); } while (valid() and !get()); return *this; }
+      CItr& nextUnset () { do { ++(*this); } while (valid() and get()); return *this; }
       CItr& firstSet ();
       CItr& lastSet ();
       bool valid () const { return _i < _bitField.bits(); }

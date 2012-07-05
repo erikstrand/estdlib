@@ -4,8 +4,9 @@
 //==============================================================================
 
 #include "MemoryPoolF.h"
-#include <cstdlib>
 #include <iostream>
+
+using namespace std;
 
 /** \class MemoryPoolF
  *
@@ -46,176 +47,187 @@
 
 
 //==============================================================================
-// Method Definitions
+// MemoryBlockRecord Method Definitions
 //==============================================================================
 
 //------------------------------------------------------------------------------
-void MemoryBlockRecord::attach (void* ptr, unsigned blockSize, unsigned itemSize) {
-   start = ptr;
-   end   = start + blockSize;
-   freeItems = blockSize / itemSize;
-   occupied.resize(freeItems);
-   occupied.zero();
-   firstFree = 0;
+void MemoryPoolF::MemoryBlockRecord::attach (void* ptr, unsigned blockSize) {
+   _start = static_cast<char*>(ptr);
+   _end   = _start + blockSize;
+   _firstFree = 0;
 }
+
+//------------------------------------------------------------------------------
+unsigned MemoryPoolF::MemoryBlockRecord::partition (unsigned itemSize) {
+   unsigned blockSize = _end - _start;
+   _freeItems = blockSize / itemSize;
+   _occupied.resize(_freeItems);
+   _occupied.zero();
+   _firstFree = 0;  // is _firstFree ever not zero when this is called?
+   return _freeItems;
+}
+
+//------------------------------------------------------------------------------
+void* MemoryPoolF::MemoryBlockRecord::alloc (unsigned itemSize) {
+   unsigned memIndex = _firstFree;
+   _occupied.set(_firstFree);
+   if (--_freeItems > 0) {
+      BitField::Itr itr = BitField::Itr(_occupied, _firstFree);
+      itr.nextUnset();
+      _firstFree = itr.i();
+      // this might leave _firstFree invalid; this is intentional
+   }
+   return &_start[itemSize * memIndex];
+}
+
+//------------------------------------------------------------------------------
+void MemoryPoolF::MemoryBlockRecord::free (unsigned index) {
+   _occupied.unset(index);
+   ++_freeItems;
+   if (index < _firstFree)
+      _firstFree = index;
+}
+
+//------------------------------------------------------------------------------
+void MemoryPoolF::MemoryBlockRecord::clear () {
+   _occupied.zero();
+   _freeItems = 0;
+   _firstFree = 0;
+}
+
+//------------------------------------------------------------------------------
+void MemoryPoolF::MemoryBlockRecord::operator= (MemoryBlockRecord && mbr) {
+   _start = mbr._start;
+   _end = mbr._end;
+   _occupied = std::move(mbr._occupied);
+   _freeItems = mbr._freeItems;
+   _firstFree = mbr._firstFree;
+   mbr._start = nullptr;
+   mbr._end = nullptr;
+}
+
+
+//==============================================================================
+// MemoryPoolF Method Definitions
+//==============================================================================
 
 //------------------------------------------------------------------------------
 MemoryPoolF::MemoryPoolF ()
-: _activeBlock(nullptr), _reserveBlock(nullptr), _activeMemory(0), _itemSize(0), _pos(0), _end(0),
-_maxAlignment(0), _newBlockSize(0), _minimumDonationSize(0),
-_requestedPieces(0), _requestedBytes(0), _activeSize(0), _activeBlocks(0),
-_reserveSize(0), _reserveBlocks(0)
+: _block(nullptr), _blocks(0), _maxBlocks(0), _itemSize(0), _minFree(5),
+_nextBlockSize(64), _minDonationSize(0), _allocs(0), _frees(0),
+_capacityItems(0), _capacityBytes(0)
 {}
 
-bool setItemSize (unsigned itemSize);
-void setAlignment (unsigned alignment);
-void setNextBlockSize (unsigned nextBlockSize);
 //------------------------------------------------------------------------------
-// Constructor
-/**
- * InitialSize is the minimum number of bytes that the MemoryPoolF will be able to store
- * in the first MemoryBlock it creates. The only case in which the first MemoryBlock
- * created will have a larger capacity that initialSize is if the first allocation
- * is for more than initialSize bytes of memory.
- *
- * ToDo: ReWrite!
- * The MemoryPoolF guarantees that MemoryPoolF::alloc will return memory
- * that is aligned to multiples of alignment. The alignment must be a power of
- * two (including 2^0). (If you give a number that is not a power of two,
- * it will be rounded up for you.) If you don't specify an alignment (or set
- * it to zero), it will be set to the smaller of itemSize and 8 (and then
- * rounded up to the nearest power of two). If you give a number larger than
- * 32, it will be set to 32 (even 32 is absurdly large).
- *
- * The minimumCapacity is used to determine which donated blocks are worth
- * keeping. If a donated block cannot hold minimumCapacity items, it is thrown
- * away. MinimumCapacity must be at least 1.
- */
-MemoryPoolF::MemoryPoolF (unsigned initialSize, unsigned maxAlignment, unsigned minimumDonationSize)
-: _activeBlock(0), _reserveBlock(0), _activeMemory(0), _pos(0), _end(0),
-_maxAlignment(maxAlignment), _newBlockSize(sizeof(MemoryBlock)+initialSize),
-_minimumDonationSize(minimumDonationSize),
-_requestedPieces(0), _requestedBytes(0), _activeSize(0), _activeBlocks(0),
-_reserveSize(0), _reserveBlocks(0)
-{
-   // The first block we allocate must be at least 4 bytes, so that the
-   // memory pool will be able to grow (see resizing conditions in alloc).
-   if (_newBlockSize < 4) {
-      _newBlockSize = 4;
+unsigned MemoryPoolF::setItemSize (unsigned itemSize, unsigned alignment) {
+   // only set _itemSize if the pool is empty
+   if (_allocs - _frees == 0) {
+      _itemSize = alignment * ( (itemSize + alignment - 1) / alignment );
+      _capacityItems = 0;
+      for (unsigned i=0; i<_blocks; ++i) {
+         _capacityItems += _block[i].partition(_itemSize);
+      }
    }
-   
-   // The minimum donation size must be at least one.
-   if (!_minimumDonationSize)
-      ++_minimumDonationSize;
+   return _itemSize;
+}
 
-   // Alignment must be a power of two (between 1 and 32).
-   if (!_maxAlignment) {
-      _maxAlignment = 1;
+//------------------------------------------------------------------------------
+MemoryPoolF::~MemoryPoolF () {
+   releaseAll();
+   std::free(_block);
+}
 
+//------------------------------------------------------------------------------
+void* MemoryPoolF::alloc () {
+   // If there's free space in our first block, we will use it.
+   // (The goal is to make this be the case as often as possible, ie nearly always.)
+   // If not...
+   if (!_blocks or _block[0].freeItems() == 0) {
+      cout << "gotta sort\n";
+
+      // sort the blocks by amount of free space
+      sortBlocks();
+
+      // If there's hardly any room in the block with the most free space,
+      // we risk having to resort our blocks frequently.
+      // (This will be less of a problem once sorting is implemented as a partial
+      // quicksort, but for now this would be very bad.)
+      if (!_blocks or _block[0].freeItems() < _minFree) {
+         cout << "gotta make a new block" << '\n';
+         print();
+         allocBlock(_nextBlockSize);
+      }
+   }
+
+   // at this point we definitely have space in our first block
+   ++_allocs;
+   return _block[0].alloc(_itemSize);
+}
+
+//------------------------------------------------------------------------------
+void MemoryPoolF::free (void* item) {
+   char* ptr = static_cast<char*> (item);
+   for (unsigned i=0; i<_blocks; ++i) {
+      if (_block[i].contains(ptr)) {
+         unsigned index = _block[i].index(ptr, _itemSize);
+         _block[i].free(index);
+         ++_frees;
+         return;
+      }
+   }
+}
+
+//------------------------------------------------------------------------------
+// ToDo: put new block at front of list since it probably has most free space
+unsigned MemoryPoolF::donate (void* start, unsigned size) {
+   if (_blocks == _maxBlocks) {
+      resizeBlockArray();
    } else {
-      if (_maxAlignment > 32)
-         _maxAlignment = 32;
-   }
-   // If _alignment is not a power of two, round it up to one.
-   if (_maxAlignment & (_maxAlignment-1)) {
-      _maxAlignment |= _maxAlignment >> 1;
-      _maxAlignment |= _maxAlignment >> 2;
-      _maxAlignment |= _maxAlignment >> 4;
-      _maxAlignment |= _maxAlignment >> 8;
-      ++_maxAlignment;
+      shiftBlockArray();
    }
 
-   // Figure out _headerSize.
-   unsigned alignmentMask = _maxAlignment - 1;
-   _headerSize = (sizeof(MemoryBlock) + alignmentMask) & ~alignmentMask;
+   MemoryBlockRecord& block = _block[0];
+   block.attach(start, size);
+   unsigned addedCap = block.partition(_itemSize);
+   _capacityItems += addedCap;
+   _capacityBytes += block.capacityBytes();
+   sortBlocks();
+   return addedCap;
 }
 
 //------------------------------------------------------------------------------
-bool MemoryPoolFF::setItemSize (unsigned itemSize) {
-   if (_requestedPieces == 0) {
-      _itemSize = itemSize;
-      return true;
-   }
-   return false;
+unsigned MemoryPoolF::allocBlock (unsigned blockSize) {
+   if (blockSize == 0) blockSize = _nextBlockSize;
+   blockSize *= _itemSize;
+   cout << "alloc " << blockSize << " bytes" << '\n';
+   return donate(malloc(blockSize), blockSize);
 }
 
 //------------------------------------------------------------------------------
-// Returns a pointer to a piece of memory with the specified size and alignment.
-/**
- * This method does not ensure alignment is a power of two. (The assumption
- * is that if the caller cares and knows enough to specify specific alignments
- * for specific memory chunks, he can be trusted to specify feasible alignments.)
- *
- * If it is out of room and malloc fails, it returns a null pointer.
- */
-void* MemoryPoolF::alloc (unsigned size, unsigned alignment)
-{
-   // See if the object will fit in the active block.
-   // Note that this test fails when _insertPoint == _endOfBlock == 0,
-   // as is the case when there is no active block at all.
-   unsigned mask = alignment - 1;
-   _pos = (_pos + mask) & ~mask;
-   if (_pos + size > _end) {
-      // First we see if there is a large enough reserve block.
-      MemoryBlock* newBlock;
-      while (_reserveBlock and _headerSize+size > _reserveBlock->_size) {
-         newBlock = _reserveBlock;
-         _reserveBlock = _reserveBlock->_next;
-         free(newBlock);
-      }
-      if (_reserveBlock) {              // Use the reserve block.
-         newBlock = _reserveBlock;
-         _reserveBlock = _reserveBlock->_next;
-         _reserveSize -= newBlock->_size;
-         --_reserveBlocks;
-      } else {                          // Otherwise allocate a new block.
-         // make sure we will have enough space in our new MemoryBlock
-         if (_newBlockSize < size + sizeof(MemoryBlock))
-            _newBlockSize = size + sizeof(MemoryBlock);
-         unsigned newBlockSize = _newBlockSize;
-         // calloc is not necessary, but it is nice to get zeroed memory
-         newBlock = static_cast<MemoryBlock*>(calloc(1, newBlockSize));
-         if (!newBlock)                 // If calloc fails...
-            return 0;
-         newBlock->_size = newBlockSize;
-
-         // increase _blockCapacity by 1/4 (for next time we need to reallocate)
-         _newBlockSize += (_newBlockSize >> 2);
-      }
-
-      // Hook up the new MemoryBlock.
-      newBlock->_next = _activeBlock;
-      _activeBlock = newBlock;
-      ++_activeBlocks;
-      _activeSize += _activeBlock->_size;
-      _activeMemory = reinterpret_cast<char*> (_activeBlock) + _headerSize;
-      _pos = 0;
-      _end = _activeBlock->_size - _headerSize;
+void MemoryPoolF::resizeBlockArray () {
+   unsigned newMaxBlocks;
+   if (_maxBlocks == 0) {
+      newMaxBlocks = 8;
+   } else {
+      newMaxBlocks = _maxBlocks + (_maxBlocks >> 1);
    }
+   auto newblock = static_cast<MemoryBlockRecord*> (malloc(newMaxBlocks*sizeof(MemoryBlockRecord)));
 
-   // Update members, return pointer.
-   void* writeHere = static_cast<void*> (&_activeMemory[_pos]);
-   _pos += size;
-   ++_requestedPieces;
-   _requestedBytes += size;
-   return writeHere;
+   for (unsigned i=0; i<_blocks; ++i) {
+      newblock[i+1] = std::move(_block[i]);
+   }
+   ++_blocks;
+   std::free(_block);
+   _block = newblock;
+   _maxBlocks = newMaxBlocks;
 }
 
 //------------------------------------------------------------------------------
-// Returns a pointer to a piece of memory adjacent to the last, or a null pointer.
-/**
- * Does not add any alignment padding, because that would defeat the purpose
- * of being contiguous.
- */
-void* MemoryPoolF::allocContiguous (unsigned size)
-{
-   if (_pos + size > _end)
-      return 0;
-   void* writeHere = static_cast<void*> (&_activeMemory[_pos]);
-   _pos += size;
-   ++_requestedPieces;
-   _requestedBytes += size;
-   return writeHere;
+void MemoryPoolF::shiftBlockArray () {
+   for (unsigned i=_blocks; i>0; --i) {
+      _block[i] = std::move(_block[i-1]);
+   }
+   ++_blocks;
 }
 
 //------------------------------------------------------------------------------
@@ -225,113 +237,67 @@ void* MemoryPoolF::allocContiguous (unsigned size)
  * not zero the memory.
  */
 void MemoryPoolF::clear () {
-   MemoryBlock* nextBlock;
-   while (_activeBlock) {
-      nextBlock = _activeBlock->_next;
-      donate(_activeBlock, _activeBlock->_size);
-      _activeBlock = nextBlock;
+   for (unsigned i=0; i<_blocks; ++i) {
+      _block[i].clear();
    }
-
-   _activeMemory = 0;
-   _pos = 0;
-   _end = 0;
-
-   _requestedPieces = 0;
-   _requestedBytes  = 0;
-   _activeSize   = 0;
-   _activeBlocks = 0;
+   _allocs = 0;
+   _frees = 0;
 }
 
 //------------------------------------------------------------------------------
 // Returns all memory to the operating system.
 void MemoryPoolF::releaseAll () {
-   releaseReserve();
-   
-   MemoryBlock* nextBlock;
-   while (_activeBlock) {
-      nextBlock = _activeBlock->_next;
-      free(_activeBlock);
-      _activeBlock = nextBlock;
+   for (unsigned i=0; i<_blocks; ++i) {
+      _block[i].release();
    }
-
-   _activeMemory = 0;
-   _pos = 0;
-   _end = 0;
-
-   _requestedPieces = 0;
-   _requestedBytes  = 0;
-   _activeSize   = 0;
-   _activeBlocks = 0;
+   _blocks = 0;
+   _allocs = 0;
+   _frees = 0;
+   _capacityItems = 0;
+   _capacityBytes = 0;
 }
-
-//------------------------------------------------------------------------------
-// Returns all reserve memory to the operating system.
-void MemoryPoolF::releaseReserve () {
-   MemoryBlock* nextBlock;
-   while (_reserveBlock) {
-      nextBlock = _reserveBlock->_next;
-      free(_reserveBlock);
-      _reserveBlock = nextBlock;
-   }
-
-   _reserveSize   = 0;
-   _reserveBlocks = 0;
-}
-
-//------------------------------------------------------------------------------
-// Adds a memory block to the list of reserve blocks.
-/**
- * The block starts at start, and is size bytes long.
- */
-void MemoryPoolF::donate (void* start, unsigned size) {
-   // If the donated block is too small, it's not worth keeping it around.
-   if (size < _minimumDonationSize) {
-      free(start);
-      return;
-   }
-   MemoryBlock* newBlock = static_cast<MemoryBlock*>(start);
-   newBlock->_next = _reserveBlock;
-   newBlock->_size = size;
-   _reserveBlock = newBlock;
-
-   ++_reserveBlocks;
-   _reserveSize += size;
-}
-
 
 //------------------------------------------------------------------------------
 // Prints data reflecting what the MemoryPoolF is set up to store.
-void MemoryPoolF::printParameters () const
-{
-   std::cout << "== MemoryPoolF Parameters ==\n";
-   std::cout << "MemoryBlock Size:    " << memoryBlockSize() << '\n';
-   std::cout << "MemoryBlock Padding: " << memoryBlockPadding() << '\n';
-   std::cout << "Header Size:         " << headerSize() << '\n';
-   std::cout << "Maximum Alignment:   " << maxAlignment() << '\n';
-   std::cout << '\n';
-}
-
-//------------------------------------------------------------------------------
-// Prints data reflecting the current state of the MemoryPoolF.
-void MemoryPoolF::printState () const
-{
-   std::cout << "=== MemoryPoolF State ===\n";
-   std::cout << "Requested Pieces: " << requestedPieces() << '\n';
-   std::cout << "Requested Bytes:  " << requestedBytes() << '\n';
-   std::cout << "Active Bytes:     " << activeBytes() << '\n';
-   std::cout << "Active Blocks:    " << activeBlocks() << '\n';
-   std::cout << "Reserve Bytes:    " << reserveBytes() << '\n';
-   std::cout << "Reserve Blocks:   " << reserveBlocks() << '\n';
-   std::cout << "Remaining Bytes:  " << remainingBytesOfActiveBlock() << '\n';
-   std::cout << "Next block size:  " << sizeOfNextAllocatedBlock() << '\n';
-   std::cout << '\n';
-}
-
-//------------------------------------------------------------------------------
-// Prints everything.
 void MemoryPoolF::print () const
 {
-   printParameters();
-   printState();
+   std::cout << "===== MemoryPoolF Parameters =====\n";
+   std::cout << "Blocks:          " << blocks() << '\n';
+   std::cout << "MaxBlocks:       " << maxBlocks() << '\n';
+   std::cout << "ItemSize:        " << itemSize() << '\n';
+   std::cout << "MinFree:         " << minFree() << '\n';
+   std::cout << "NextBlockSize:   " << nextBlockSize() << '\n';
+   std::cout << "MinDonationSize: " << minDonationSize() << '\n';
+   std::cout << "Allocs:          " << allocs() << '\n';
+   std::cout << "Frees:           " << frees() << '\n';
+   std::cout << "CapacityItems:   " << capacityItems() << '\n';
+   std::cout << "CapacityBytes:   " << capacityBytes() << '\n';
+   std::cout << "MemoryBlockSize: " << memoryBlockSize() << '\n';
+   std::cout << "FreeItemsTotal:  " << freeItemsTotal() << '\n';
+   std::cout << "FreeItemsBlock:  " << freeItemsBlock() << '\n';
+   std::cout << '\n';
+}
+
+
+//------------------------------------------------------------------------------
+// We should probably use a partial quicksort (ie only recurse on larger partitions)
+// instead of insertion sort. However insertion sort isn't bad if:
+// 1) list stays mostly sorted (deletes are evenly distribued over blocks)
+// 2) sorting is done infrequently (make a new block when all are almost full)
+void MemoryPoolF::sortBlocks () {
+   MemoryBlockRecord temp;
+   int j;
+   for (unsigned i=1; i<_blocks; ++i) {
+      if (_block[i] > _block[i-1]) {
+         temp = std::move(_block[i]);
+         _block[i] = std::move(_block[i-1]);
+         j = i - 2;
+         while (j >= 0 and temp > _block[j]) {
+            --j;
+         }
+         ++j;
+         _block[j] = std::move(temp);
+      }
+   }
 }
 
