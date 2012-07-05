@@ -11,6 +11,11 @@
  *
  * All types are derived from SMatrixBase, which stores only the elements on
  * the diagonal and below.
+ *
+ * Don't forget to set SMatrixBase<T>::_zero for all necessary T! For example,
+   template<>
+   const float SMatrixBase<float>::_zero = 0.0;
+ * could go at the top of main.cpp (before the main method).
  */
 //==============================================================================
 
