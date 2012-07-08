@@ -66,7 +66,7 @@ class MPW;
 // Wrapper for MemoryPoolF
 template<>
 struct MPW<MemoryPoolF> {
-public:
+private:
    MemoryPoolF* _memPoolF;
 
 public:
@@ -89,7 +89,7 @@ public:
 // Wrapper for MemoryPool
 template<>
 struct MPW<MemoryPool> {
-public:
+private:
    MemoryPool* _memPool;
    unsigned _size;
 
@@ -183,7 +183,8 @@ public:
    template<class KEY> typename W::Ptr  find (KEY const& key) {
       return const_cast<ITEM*>(const_cast<HashSet const*>(this)->find(key));
    }
-   // Note: there is currently no delete function.
+   // Note: remove can only be called with MemoryPoolF (MemoryPool will not work)
+   template<class KEY> void remove (KEY const& key);
    
    void clear ();          ///< Clears all ITEMs from the HashSet, without changing the number of bins.
 
@@ -344,13 +345,36 @@ typename Wrap<ITEM>::CPtr HashSet<ITEM, POOL>::find (KEY const& key) const
 {
    unsigned hash = cref(key).hash();
    HashNode* node = _bin[hash & _mask];
-   while(node) {
+   while (node) {
       if (node->_hash == hash and node->_item.cref() == cref(key)) {
          return node->_item.ptr();
       }
       node = node->_next;
    }
    return 0;
+}
+
+//------------------------------------------------------------------------------
+template<class ITEM, class POOL>
+template<class KEY>
+void HashSet<ITEM, POOL>::remove (KEY const& key) {
+   unsigned hash = cref(key).hash();
+   HashNode* node = _bin[hash & _mask];
+   if (node->_hash == hash and node->_item.cref() == cref(key)) {
+      _bin[hash & _mask] = node->_next;
+      _pool.free(node);
+      return;
+   }
+   HashNode* nextnode = node->_next;
+   while (nextnode) {
+      if (nextnode->_hash == hash and nextnode->_item.cref() == cref(key)) {
+         node->_next = nextnode->_next;
+         _pool.free(nextnode);
+         return;
+      }
+      node = nextnode;
+      nextnode = nextnode->_next;
+   }
 }
 
 //------------------------------------------------------------------------------

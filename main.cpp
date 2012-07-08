@@ -17,7 +17,9 @@ struct HUnsigned {
 int main (int argc, char * const argv[]) {
 
 
-   HashSet<HUnsigned, MemoryPoolF> set(64);
+   HashSet<HUnsigned, MemoryPoolF> set(4);
+
+   cout << "Adding...\n";
    set.add(3);
    set.add(4);
    set.add(7);
@@ -26,6 +28,16 @@ int main (int argc, char * const argv[]) {
    if (set.find(HUnsigned(4))) { cout << "found 4\n"; }
    if (set.find(HUnsigned(5))) { cout << "found 5\n"; }
    if (set.find(HUnsigned(7))) { cout << "found 7\n"; }
+   cout << '\n';
+
+   cout << "Removing...\n";
+   set.remove(HUnsigned(7));
+   if (set.find(HUnsigned(2))) { cout << "found 2\n"; }
+   if (set.find(HUnsigned(3))) { cout << "found 3\n"; }
+   if (set.find(HUnsigned(4))) { cout << "found 4\n"; }
+   if (set.find(HUnsigned(5))) { cout << "found 5\n"; }
+   if (set.find(HUnsigned(7))) { cout << "found 7\n"; }
+   cout << '\n';
 
 
 
