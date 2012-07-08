@@ -184,7 +184,7 @@ public:
       return const_cast<ITEM*>(const_cast<HashSet const*>(this)->find(key));
    }
    // Note: remove can only be called with MemoryPoolF (MemoryPool will not work)
-   template<class KEY> void remove (KEY const& key);
+   template<class KEY> bool remove (KEY const& key);
    
    void clear ();          ///< Clears all ITEMs from the HashSet, without changing the number of bins.
 
@@ -357,24 +357,25 @@ typename Wrap<ITEM>::CPtr HashSet<ITEM, POOL>::find (KEY const& key) const
 //------------------------------------------------------------------------------
 template<class ITEM, class POOL>
 template<class KEY>
-void HashSet<ITEM, POOL>::remove (KEY const& key) {
+bool HashSet<ITEM, POOL>::remove (KEY const& key) {
    unsigned hash = cref(key).hash();
    HashNode* node = _bin[hash & _mask];
    if (node->_hash == hash and node->_item.cref() == cref(key)) {
       _bin[hash & _mask] = node->_next;
       _pool.free(node);
-      return;
+      return true;
    }
    HashNode* nextnode = node->_next;
    while (nextnode) {
       if (nextnode->_hash == hash and nextnode->_item.cref() == cref(key)) {
          node->_next = nextnode->_next;
          _pool.free(nextnode);
-         return;
+         return true;
       }
       node = nextnode;
       nextnode = nextnode->_next;
    }
+   return false;
 }
 
 //------------------------------------------------------------------------------
