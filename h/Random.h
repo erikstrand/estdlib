@@ -28,8 +28,10 @@ private:
 public:
    XorShift32 (u_64 seed) { setState(seed); }
    XorShift32 (u_32 lowSeed, u_32 highSeed) { setState(lowSeed, highSeed); }
+   XorShift32 (): XorShift32(0, 0) {}
    void setState (u_64 seed);
    void setState (u_32 lowSeed, u_32 highSeed);
+   void state (unsigned& x, unsigned& y) const { x = _x; y = _y; }
    // these functions automatically increment state
    u_32 u32 () { next(); return _y; }
    f_64 f64 ();
