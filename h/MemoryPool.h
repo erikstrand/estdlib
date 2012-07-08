@@ -11,6 +11,10 @@
 /// A simple memory pool that hands out variably sized pieces.
 //==============================================================================
 
+/*
+ * ToDo: why is there a max alignment? Answer: no good reason.
+ */
+
 class MemoryPool  {
 private:
    /// The fundamental unit of storage of MemoryPool.

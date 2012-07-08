@@ -143,8 +143,6 @@ void* MemoryPoolF::alloc () {
    // (The goal is to make this be the case as often as possible, ie nearly always.)
    // If not...
    if (!_blocks or _block[0].freeItems() == 0) {
-      cout << "gotta sort\n";
-
       // sort the blocks by amount of free space
       sortBlocks();
 
@@ -153,8 +151,6 @@ void* MemoryPoolF::alloc () {
       // (This will be less of a problem once sorting is implemented as a partial
       // quicksort, but for now this would be very bad.)
       if (!_blocks or _block[0].freeItems() < _minFree) {
-         cout << "gotta make a new block" << '\n';
-         print();
          allocBlock(_nextBlockSize);
       }
    }
@@ -199,7 +195,6 @@ unsigned MemoryPoolF::donate (void* start, unsigned size) {
 unsigned MemoryPoolF::allocBlock (unsigned blockSize) {
    if (blockSize == 0) blockSize = _nextBlockSize;
    blockSize *= _itemSize;
-   cout << "alloc " << blockSize << " bytes" << '\n';
    return donate(malloc(blockSize), blockSize);
 }
 

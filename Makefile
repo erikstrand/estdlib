@@ -13,11 +13,14 @@ hppdir = hpp
 Includes = -I$(hdir) -I$(hppdir)
 
 # rules
-$(bindir)/main : main.cpp $(bindir)/MemoryPoolF.o $(bindir)/BitField.o
+$(bindir)/main : main.cpp $(bindir)/MemoryPoolF.o $(bindir)/MemoryPool.o $(bindir)/BitField.o
 	$(CXX) $(CXXFLAGS) $(Includes) -o bin/main main.cpp $(bindir)/MemoryPoolF.o $(bindir)/BitField.o
 
 $(bindir)/MemoryPoolF.o : $(cppdir)/MemoryPoolF.cpp $(hdir)/MemoryPoolF.h $(hdir)/BitField.h
 	$(CXX) $(CXXFLAGS) -c -o $@ $< $(Includes)
+
+$(bindir)/MemoryPool.o : $(cppdir)/MemoryPool.cpp $(hdir)/MemoryPool.h
+	$(CXX) $(CXXFLAGS) -c -o $@ $< $(Includes)$(bindir)/BitField.o
 
 $(bindir)/BitField.o : $(cppdir)/BitField.cpp $(hdir)/BitField.h 
 	$(CXX) $(CXXFLAGS) -c -o $@ $< $(Includes)

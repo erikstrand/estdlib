@@ -99,6 +99,8 @@ public:
    inline typename Wrap<ITEM>::T removeNext (Link* parent);
    // Removes the first link.
    inline typename Wrap<ITEM>::T removeFirst ();
+   // Removes all links.
+   void removeAll ();
    
    // Leaks the link following parent.
    inline void leakNext (Link* parent);
@@ -175,6 +177,20 @@ typename Wrap<ITEM>::T LinkedList<ITEM>::removeNext (Link* parent) {
 template<typename ITEM>
 typename Wrap<ITEM>::T LinkedList<ITEM>::removeFirst () {
    return removeNext(reinterpret_cast<Link*> (this));
+}
+
+//------------------------------------------------------------------------------
+template<typename ITEM>
+void LinkedList<ITEM>::removeAll () {
+   Link* link1 = _first;
+   Link* link2;
+   for (unsigned i=0; i<_items; ++i) {
+      link2 = link1->_next;
+      delete link1;
+      link1 = link2;
+   }
+   _first = 0;
+   _items = 0;
 }
 
 //------------------------------------------------------------------------------
