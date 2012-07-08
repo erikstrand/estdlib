@@ -13,6 +13,12 @@
 /// A memory pool that hands out fixed sized pieces.
 //==============================================================================
 
+/*
+ * Compare to MemoryPool.
+ *
+ * ToDo: make donate actually check _minDonationSize
+ */
+
 class MemoryPoolF {
 //------------------------------------------------------------------------------
 // SubClasses
