@@ -12,7 +12,6 @@
 #include <cstring>
 #include <iostream>
 #include "Wrap.hpp"
-#include "MemoryPool.h"
 
 
 //==============================================================================
@@ -54,7 +53,7 @@
 //==============================================================================
 
 /*
- * These enable the same HashSet Code to be used with multiple types of Memory Pool.
+ * These enable the same HashSet template to be used with multiple types of Memory Pool.
  */
 
 //------------------------------------------------------------------------------
@@ -87,6 +86,7 @@ public:
 
 //------------------------------------------------------------------------------
 // Wrapper for MemoryPool
+/*
 template<>
 struct MPW<MemoryPool> {
 private:
@@ -103,6 +103,7 @@ public:
    void donate (void* ptr, unsigned size) { _memPool->donate(ptr, size); }
    void clear () { _memPool->clear(); }
 };
+*/
 
 
 //==============================================================================
@@ -186,11 +187,15 @@ public:
    // Note: remove can only be called with MemoryPoolF (MemoryPool will not work)
    template<class KEY> bool remove (KEY const& key);
    
-   void clear ();          ///< Clears all ITEMs from the HashSet, without changing the number of bins.
+   /// Clears all ITEMs from the HashSet, without changing the number of bins.
+   void clear ();
 
-   unsigned size () const; ///< Returns the number of items in the HashSet.
-   Iterator iterator ();      ///< Returns an Iterator that points to some ITEM in the HashSet.
-   ConstIterator constIterator () const; ///< Returns a ConstIterator that points to some ITEM in the HashSet.
+   /// Returns the number of items in the HashSet.
+   unsigned size () const { return _size; }
+   /// Returns an Iterator that points to some ITEM in the HashSet.
+   Iterator      iterator      () { return Iterator(*this); }
+   /// Returns a ConstIterator that points to some ITEM in the HashSet.
+   ConstIterator constIterator () const { return ConstIterator(*this); }
 
    unsigned bins () const { return _bins; }
    void print () const;    /// A printing function for debugging purposes.
@@ -387,37 +392,6 @@ void HashSet<ITEM, POOL>::clear ()
    _pool.clear();
    _size = 0;
 }
-
-//------------------------------------------------------------------------------
-// Returns the number of items in the HashSet.
-template<class ITEM, class POOL>
-inline unsigned HashSet<ITEM, POOL>::size () const
-{
-   return _size;
-}
-
-//------------------------------------------------------------------------------
-// Returns an Iterator that points to the "first" ITEM in the HashSet.
-/**
- * The iterator will not always point to the same ITEM initially.
- */
-template<class ITEM, class POOL>
-typename HashSet<ITEM, POOL>::Iterator HashSet<ITEM, POOL>::iterator ()
-{
-   return Iterator(*this);
-}
-
-//------------------------------------------------------------------------------
-// Returns a ConstIterator that points to the "first" ITEM in the HashSet.
-/**
- * The iterator will not always point to the same ITEM initially.
- */
-template<class ITEM, class POOL>
-typename HashSet<ITEM, POOL>::ConstIterator HashSet<ITEM, POOL>::constIterator () const
-{
-   return ConstIterator(*this);
-}
-
 
 //------------------------------------------------------------------------------
 // printing function for debugging

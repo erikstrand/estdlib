@@ -2,8 +2,8 @@
 
 # compilation variables
 CXX = g++
-#CXXFLAGS = -Wall -o3 -std=c++11
-CXXFLAGS = -Wall -g -std=c++11
+CXXFLAGS = -Wall -o3 -std=c++11
+#CXXFLAGS = -Wall -g -std=c++11
 
 # convenience variables
 bindir = bin
@@ -13,16 +13,19 @@ hppdir = hpp
 Includes = -I$(hdir) -I$(hppdir)
 
 # rules
-$(bindir)/main : main.cpp $(bindir)/MemoryPoolF.o $(bindir)/MemoryPool.o $(bindir)/BitField.o
-	$(CXX) $(CXXFLAGS) $(Includes) -o bin/main main.cpp $(bindir)/MemoryPoolF.o $(bindir)/BitField.o
+$(bindir)/main : main.cpp $(bindir)/MemoryPoolF.o $(bindir)/BitField.o $(bindir)/Random.o
+	$(CXX) $(CXXFLAGS) $(Includes) -o bin/main main.cpp $(bindir)/MemoryPoolF.o $(bindir)/BitField.o $(bindir)/Random.o
 
 $(bindir)/MemoryPoolF.o : $(cppdir)/MemoryPoolF.cpp $(hdir)/MemoryPoolF.h $(hdir)/BitField.h
 	$(CXX) $(CXXFLAGS) -c -o $@ $< $(Includes)
 
-$(bindir)/MemoryPool.o : $(cppdir)/MemoryPool.cpp $(hdir)/MemoryPool.h
-	$(CXX) $(CXXFLAGS) -c -o $@ $< $(Includes)$(bindir)/BitField.o
+#$(bindir)/MemoryPool.o : $(cppdir)/MemoryPool.cpp $(hdir)/MemoryPool.h
+   #$(CXX) $(CXXFLAGS) -c -o $@ $< $(Includes)$(bindir)/BitField.o
 
 $(bindir)/BitField.o : $(cppdir)/BitField.cpp $(hdir)/BitField.h 
+	$(CXX) $(CXXFLAGS) -c -o $@ $< $(Includes)
+
+$(bindir)/Random.o : $(cppdir)/Random.cpp $(hdir)/Random.h 
 	$(CXX) $(CXXFLAGS) -c -o $@ $< $(Includes)
 
 .PHONY : clean

@@ -10,23 +10,14 @@ using namespace std;
 
 /** \class MemoryPoolF
  *
- * MemoryPoolF contains a linked list of large blocks of memory. Each block
- * has a MemoryBlock object at its beginning that contains the size of the block
- * and a pointer to the next block. Each time the user calls MemoryPoolF::alloc,
- * the MemoryPoolF returns a pointer to at least the requested number of bytes of
- * free memory. It gets these smaller chunks of memory from the first block
- * in its list of large blocks. When this block runs out of room, it allocates
- * a new large block and adds it to the top of the list. (All blocks but the
- * first are full.)
- *
- * MemoryPoolF also has a list of reserve blocks. These can be given to the
- * MemoryPoolF with the MemoryPoolF::donate method. New blocks will not be
- * allocated until all the reserve blocks are filled.
- *
- * To delete the items in the pool, one can use MemoryPoolF::clear, which
- * turns all active memory into reserve memory, or MemoryPoolF::releaseAll,
- * which returns all the active and reserve memory it has to the operating system.
- * (Items must be deleted all at once; there is no free list.)
+ * MemoryPoolF contains an array of MemoryBlockRecords. Each MemoryBlockRecord
+ * points to a large chunk of memory and stores some metadata about this chunk.
+ * Most importantly, the MemoryBlockRecord partitions its associated memory
+ * into equally sized pieces, and keeps track of which pieces have been allocated
+ * and which are free (using a BitField). This enables efficient allocation and
+ * freeing of memory, with the constraint that the pieces of memory must all be
+ * the same size. Memory may also be freed all at once (with very few actual
+ * calls to the c standard library free).
  *
  * MemoryPoolF will also ensure that the objects it allocates adhere to a
  * specific alignment. It does this by placing appropriate padding around all
@@ -147,7 +138,7 @@ void* MemoryPoolF::alloc () {
       sortBlocks();
 
       // If there's hardly any room in the block with the most free space,
-      // we risk having to resort our blocks frequently.
+      // we risk having to re-sort our blocks frequently.
       // (This will be less of a problem once sorting is implemented as a partial
       // quicksort, but for now this would be very bad.)
       if (!_blocks or _block[0].freeItems() < _minFree) {
@@ -182,6 +173,7 @@ unsigned MemoryPoolF::donate (void* start, unsigned size) {
       shiftBlockArray();
    }
 
+   new(&_block[0]) MemoryBlockRecord;
    MemoryBlockRecord& block = _block[0];
    block.attach(start, size);
    unsigned addedCap = block.partition(_itemSize);

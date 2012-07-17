@@ -1,80 +1,64 @@
+//==============================================================================
+// main.cpp
+// created July 16 2012
+//==============================================================================
+
+/*
+ * This code adds a million random numbers to a hash set, then searches for
+ * a million random numbers.
+ * Just for fun it records the number of lookups that succeed (this isn't
+ * an effective test for uniform randomness).
+ */
+
+
 #include <iostream>
 #include <iomanip>
+#include <math.h>
 #include "MemoryPoolF.h"
 #include "HashSet.hpp"
+#include "Random.h"
 
 using namespace std;
 
 
+//------------------------------------------------------------------------------
+// extends unsigned with the methods required by HashSet
 struct HUnsigned {
    unsigned _n;
+   HUnsigned () {}
    HUnsigned (unsigned n): _n(n) {}
    unsigned hash () const { return _n; }
    bool operator== (HUnsigned hu) const { return _n == hu._n; }
 };
 
 
+//------------------------------------------------------------------------------
 int main (int argc, char * const argv[]) {
 
+   const unsigned n = 1000000;
+   const unsigned m = 1000000;
+   HashSet<HUnsigned, MemoryPoolF> set(n);
+   XorShift32 rand(0xdefceedll);
 
-   HashSet<HUnsigned, MemoryPoolF> set(4);
+   cout << "Adding " << n << " random numbers to the HashSet...\n";
+   do {
+      set.add(rand.u32());
+   } while (set.size() <= n);
 
-   cout << "Adding...\n";
-   set.add(3);
-   set.add(4);
-   set.add(7);
-   if (set.find(HUnsigned(2))) { cout << "found 2\n"; }
-   if (set.find(HUnsigned(3))) { cout << "found 3\n"; }
-   if (set.find(HUnsigned(4))) { cout << "found 4\n"; }
-   if (set.find(HUnsigned(5))) { cout << "found 5\n"; }
-   if (set.find(HUnsigned(7))) { cout << "found 7\n"; }
+   cout << "Searching for " << m << " random numbers in the HashSet...\n";
+   unsigned hits = 0;
+   HUnsigned temp;
+   for (unsigned i=0; i<m; ++i) {
+      temp = rand.u32();
+      if (set.find(temp)) {
+         ++hits;
+      }
+   }
+
+   cout << "Found " << hits << " hits.\n";
+   cout << "(We expect " << (float)n * (float)m / pow(2, 32) << " hits if the random number generator is uniformly distributed).";
    cout << '\n';
 
-   cout << "Removing...\n";
-   set.remove(HUnsigned(7));
-   if (set.find(HUnsigned(2))) { cout << "found 2\n"; }
-   if (set.find(HUnsigned(3))) { cout << "found 3\n"; }
-   if (set.find(HUnsigned(4))) { cout << "found 4\n"; }
-   if (set.find(HUnsigned(5))) { cout << "found 5\n"; }
-   if (set.find(HUnsigned(7))) { cout << "found 7\n"; }
-   cout << '\n';
-
-
-
-
-
-
-   // tests MemPoolF
-   /*
-   MemoryPoolF pool;
-   pool.setItemSize(sizeof(unsigned));
-   pool.setNextBlockSize(16);
-   unsigned n = 32;
-   unsigned* ptr[n];
-   for (unsigned i=0; i<n; ++i) {
-      ptr[i] = static_cast<unsigned*> (pool.alloc());
-      *ptr[i] = i;
-   }
-   cout << "Done adding things!\n";
-   pool.print();
-
-   unsigned delIndex = 28;
-   cout << ptr[delIndex] << ": " << *ptr[delIndex] << '\n';
-   pool.free(ptr[delIndex]);
-   ptr[delIndex] = static_cast<unsigned*> (pool.alloc());
-
-   for (unsigned i=0; i<n; ++i) {
-      cout << ptr[i] << ": " << *ptr[i] << '\n';
-   }
-   
-   for (unsigned i=0; i<5; ++i) {
-      pool.free(ptr[i]);
-   }
-   cout << pool.alloc() << '\n';
-
-   pool.print();
-   */
-   
-   
    return 0;
 }
+

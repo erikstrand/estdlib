@@ -47,7 +47,7 @@ private:
       void release () { std::free(_start); }
       ~MemoryBlockRecord () { release(); }
 
-      /// does not check if there is space (this avoids unnecessary stack frames)
+      /// caller (ie MemoryPoolF) must check if there is space (this avoids unnecessary stack frames)
       void* alloc (unsigned itemSize);
       void free (unsigned index);
       void clear ();
@@ -57,14 +57,14 @@ private:
       char* start () const { return _start; }
       char* end   () const { return _end; }
       unsigned freeItems () const { return _freeItems; }
-      // only call after partition!
+      // only call these methods after partitioning!
       unsigned capacityItems (unsigned itemSize) const { return _occupied.bits(); }
       unsigned capacityBytes () const { return _end - _start; }
       bool operator>  (MemoryBlockRecord const& mbr) { return _freeItems > mbr._freeItems; }
       bool contains (char* ptr) { return (_start <= ptr and ptr < _end); }
       unsigned index (char* ptr, unsigned itemSize) { return (ptr - _start) / itemSize; }
    };
-   
+
 //------------------------------------------------------------------------------
 // Members
 private:
